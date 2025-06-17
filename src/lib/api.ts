@@ -27,6 +27,10 @@ export interface DetailedRaceResult {
 }
 export interface LapPositionDataPoint { LapNumber: number; [driverCode: string]: number | null; }
 
+// --- Stint Analysis Interfaces ---
+export interface LapDetail { lapNumber: number; lapTime: number; }
+export interface StintAnalysisData { driverCode: string; stintNumber: number; compound: string; startLap: number; endLap: number; lapDetails: LapDetail[]; }
+
 // --- OpenF1 Base URL ---
 const OPENF1_BASE = 'https://api.openf1.org/v1';
 
@@ -124,6 +128,11 @@ export const fetchLapPositions = async (year: number, event: string, session: st
   return fetch(`${OPENF1_BASE}/position_data?session_key=${sk}`).then(r => r.json());
 };
 
+export const fetchStintAnalysis = async (year: number, event: string, session: string): Promise<StintAnalysisData[]> => {
+  // Stint analysis is not directly supported by OpenF1; returning empty array as a placeholder
+  return [];
+};
+
 export const fetchRaceResults = async (year: number): Promise<RaceResult[]> => {
   const mk = await getMeetingKey(year, '');
   return fetch(`${OPENF1_BASE}/results/races?meeting_key=${mk}`).then(r => r.json());
@@ -145,13 +154,7 @@ export const fetchTeamStandings = async (year: number): Promise<TeamStanding[]> 
 };
 
 // --- Schedule Interface and Fetch ---
-export interface ScheduleEvent {
-  meetingKey: number;
-  name: string;
-  country: string;
-  date: string;
-}
-
+export interface ScheduleEvent { meetingKey: number; name: string; country: string; date: string; }
 export const fetchSchedule = async (year: number): Promise<ScheduleEvent[]> => {
   const raw = await fetch(`${OPENF1_BASE}/meetings?year=${year}`).then(r => r.json());
   return raw.map((m: any) => ({ meetingKey: m.meeting_key, name: m.name, country: m.country || '', date: m.date || '' }));

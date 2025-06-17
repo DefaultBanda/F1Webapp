@@ -1,163 +1,151 @@
-// Use the OpenF1 API base URL by default
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.openf1.org/v1';
+// api.ts — Direct OpenF1 Integration
+// No backend proxy; all calls go to https://api.openf1.org/v1
 
-// OpenF1 does not require an API key like FastF1,
-// so you may remove API_KEY-related headers (if not needed)
-const getHeaders = (): HeadersInit => ({
-    'Content-Type': 'application/json'
-});
+// --- Data Structures (Exported) ---
+export interface LapTimeDataPoint {
+  LapNumber: number;
+  [driverCode: string]: number | null;
+}
+export interface SpeedDataPoint { Distance: number; Speed: number; }
+export interface GearMapDataPoint { X: number; Y: number; nGear: number; }
+export interface ThrottleDataPoint { Distance: number; Throttle: number; }
+export interface BrakeDataPoint { Distance: number; Brake: number; }
+export interface RPMDataPoint { Distance: number; RPM: number; }
+export interface DRSDataPoint { Distance: number; DRS: number; }
+export interface SessionDriver { code: string; name: string; team: string; }
+export interface AvailableSession { name: string; type: string; startTime: string; }
+export interface DriverStanding { rank: number; code: string; name: string; team: string; points: number; wins: number; podiums: number; }
+export interface TeamStanding { rank: number; team: string; points: number; wins: number; podiums: number; }
+export interface RaceResult { round: number; driver: string; team: string; teamColor: string; date?: string; location?: string; }
+export interface DetailedRaceResult {
+  position: number | null;
+  driverCode: string;
+  fullName: string;
+  team: string;
+  points: number;
+  status: string;
+  gridPosition?: number | null;
+  teamColor: string;
+  fastestLapTimeValue?: string | null;
+}
+export interface LapPositionDataPoint { LapNumber: number; [driverCode: string]: number | null; }
 
-// --- OpenF1 Data Structures ---
+// --- OpenF1 Base URL ---
+const OPENF1_BASE = 'https://api.openf1.org/v1';
 
-export interface CarDataPoint {
-    brake: number;
-    date: string;
-    driver_number: number;
-    drs: number;
-    meeting_key: number;
-    n_gear: number;
-    rpm: number;
-    session_key: number;
-    speed: number;
-    throttle: number;
+// --- Helper: Map year & event & session names to session_key ---
+// You may cache results if needed
+async function getMeetingKey(year: number, event: string): Promise<number> {
+  const res = await fetch(`${OPENF1_BASE}/meetings?year=${year}`);
+  const list = await res.json();
+  const m = list.find((m: any) => m.name.toLowerCase().includes(event.toLowerCase()));
+  if (!m) throw new Error(`Meeting not found for ${year} ${event}`);
+  return m.meeting_key;
+}
+async function getSessionKey(meetingKey: number, session: string): Promise<number> {
+  const res = await fetch(`${OPENF1_BASE}/sessions?meeting_key=${meetingKey}`);
+  const list = await res.json();
+  const s = list.find((s: any) => s.name.toLowerCase().includes(session.toLowerCase()));
+  if (!s) throw new Error(`Session '${session}' not found for meeting ${meetingKey}`);
+  return s.session_key;
 }
 
-export interface OpenF1Driver {
-    broadcast_name: string;
-    country_code: string;
-    driver_number: number;
-    first_name: string;
-    full_name: string;
-    headshot_url: string;
-    last_name: string;
-    meeting_key: number;
-    name_acronym: string;
-    session_key: number;
-    team_colour: string;
-    team_name: string;
-}
+// --- API Fetch Functions (keep original signatures) ---
 
-export interface LapData {
-    date_start: string;
-    driver_number: number;
-    duration_sector_1: number;
-    duration_sector_2: number;
-    duration_sector_3: number;
-    i1_speed: number;
-    i2_speed: number;
-    is_pit_out_lap: boolean;
-    lap_duration: number;
-    lap_number: number;
-    meeting_key: number;
-    segments_sector_1: number[];
-    segments_sector_2: number[];
-    segments_sector_3: number[];
-    session_key: number;
-    st_speed: number;
-}
-
-export interface IntervalData {
-    date: string;
-    driver_number: number;
-    gap_to_leader: number | null;
-    interval: number | null;
-    meeting_key: number;
-    session_key: number;
-}
-
-// --- OpenF1 API Fetch Functions ---
-
-/**
- * Fetch car (telemetry) data.
- * Example URL: https://api.openf1.org/v1/car_data?driver_number=55&session_key=9159&speed>=315
- */
-export const fetchCarData = async (
-    driverNumber: number,
-    sessionKey: number,
-    speedFilter?: number
-): Promise<CarDataPoint[]> => {
-    const params = new URLSearchParams({
-        driver_number: driverNumber.toString(),
-        session_key: sessionKey.toString()
-    });
-    if (speedFilter !== undefined) {
-        // Note: To filter where speed is greater than or equal to a value, OpenF1 expects "speed>=" in the query string.
-        params.append('speed>=', speedFilter.toString());
-    }
-    const url = `${API_BASE_URL}/car_data?${params.toString()}`;
-    console.log(`Fetching car data from: ${url}`);
-    const response = await fetch(url, { headers: getHeaders() });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+export const fetchAvailableSessions = async (year: number, event: string): Promise<AvailableSession[]> => {
+  const key = await getMeetingKey(year, event);
+  const raw = await fetch(`${OPENF1_BASE}/sessions?meeting_key=${key}`).then(r => r.json());
+  return raw.map((s: any) => ({ name: s.name, type: s.type, startTime: s.date || '' }));
 };
 
-/**
- * Fetch driver info.
- * Example URL: https://api.openf1.org/v1/drivers?driver_number=1&session_key=9158
- */
-export const fetchDriverInfo = async (
-    driverNumber: number,
-    sessionKey: number
-): Promise<OpenF1Driver[]> => {
-    const params = new URLSearchParams({
-        driver_number: driverNumber.toString(),
-        session_key: sessionKey.toString()
-    });
-    const url = `${API_BASE_URL}/drivers?${params.toString()}`;
-    console.log(`Fetching driver info from: ${url}`);
-    const response = await fetch(url, { headers: getHeaders() });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+export const fetchSessionDrivers = async (year: number, event: string, session: string): Promise<SessionDriver[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const raw = await fetch(`${OPENF1_BASE}/entry_list?session_key=${sk}`).then(r => r.json());
+  return raw.map((d: any) => ({ code: d.driver_number, name: d.full_name, team: d.team }));
 };
 
-/**
- * Fetch lap data.
- * Example URL: https://api.openf1.org/v1/laps?session_key=9161&driver_number=63&lap_number=8
- */
-export const fetchLapData = async (
-    sessionKey: number,
-    driverNumber: number,
-    lapNumber: number
-): Promise<LapData[]> => {
-    const params = new URLSearchParams({
-        session_key: sessionKey.toString(),
-        driver_number: driverNumber.toString(),
-        lap_number: lapNumber.toString()
+export const fetchLapTimes = async (year: number, event: string, session: string, drivers: string[]): Promise<LapTimeDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const all: LapTimeDataPoint[] = [];
+  for (const d of drivers) {
+    const laps = await fetch(`${OPENF1_BASE}/laps?session_key=${sk}&driver_number=${d}`).then(r => r.json());
+    laps.forEach((lap: any) => {
+      const e = all.find(x => x.LapNumber === lap.lap_number);
+      if (e) e[d] = lap.lap_time;
+      else all.push({ LapNumber: lap.lap_number, [d]: lap.lap_time });
     });
-    const url = `${API_BASE_URL}/laps?${params.toString()}`;
-    console.log(`Fetching lap data from: ${url}`);
-    const response = await fetch(url, { headers: getHeaders() });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+  }
+  return all;
 };
 
-/**
- * Fetch interval data.
- * Example URL: https://api.openf1.org/v1/intervals?session_key=9165&interval<0.005
- */
-export const fetchIntervals = async (
-    sessionKey: number,
-    intervalThreshold: number
-): Promise<IntervalData[]> => {
-    const params = new URLSearchParams({
-        session_key: sessionKey.toString(),
-        // Use the filtering syntax as documented (key with operator)
-        'interval<': intervalThreshold.toString()
-    });
-    const url = `${API_BASE_URL}/intervals?${params.toString()}`;
-    console.log(`Fetching intervals from: ${url}`);
-    const response = await fetch(url, { headers: getHeaders() });
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.json();
+export const fetchTelemetrySpeed = async (year: number, event: string, session: string, driver: string, lap: number): Promise<SpeedDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ Distance: p.distance, Speed: p.speed }));
 };
 
-// Additional functions (such as for meetings, pit stops, positions, etc.) 
-// should be refactored similarly – updating endpoint paths and query parameter names as per OpenF1 docs.
+export const fetchTelemetryGear = async (year: number, event: string, session: string, driver: string, lap: number): Promise<GearMapDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ X: p.longitude, Y: p.latitude, nGear: p.n_gear }));
+};
+
+export const fetchTelemetryThrottle = async (year: number, event: string, session: string, driver: string, lap: number): Promise<ThrottleDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ Distance: p.distance, Throttle: p.throttle }));
+};
+
+export const fetchTelemetryBrake = async (year: number, event: string, session: string, driver: string, lap: number): Promise<BrakeDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ Distance: p.distance, Brake: p.brake }));
+};
+
+export const fetchTelemetryRPM = async (year: number, event: string, session: string, driver: string, lap: number): Promise<RPMDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ Distance: p.distance, RPM: p.rpm }));
+};
+
+export const fetchTelemetryDRS = async (year: number, event: string, session: string, driver: string, lap: number): Promise<DRSDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  const data = await fetch(`${OPENF1_BASE}/car_data?session_key=${sk}&driver_number=${driver}&lap_number=${lap}`).then(r => r.json());
+  return data.map((p: any) => ({ Distance: p.distance, DRS: p.drs === '1' ? 1 : 0 }));
+};
+
+export const fetchLapPositions = async (year: number, event: string, session: string): Promise<LapPositionDataPoint[]> => {
+  const mk = await getMeetingKey(year, event);
+  const sk = await getSessionKey(mk, session);
+  return fetch(`${OPENF1_BASE}/position_data?session_key=${sk}`).then(r => r.json());
+};
+
+export const fetchRaceResults = async (year: number): Promise<RaceResult[]> => {
+  const mk = await getMeetingKey(year, '');
+  const data = await fetch(`${OPENF1_BASE}/results/races?meeting_key=${mk}`).then(r => r.json());
+  return data;
+};
+
+export const fetchSpecificRaceResults = async (year: number, event: string, session: string): Promise<DetailedRaceResult[]> => {
+  const mk = await getMeetingKey(year, event);
+  const raw = await fetch(`${OPENF1_BASE}/results/race/${year}?meeting_key=${mk}`).then(r => r.json());
+  return raw; 
+};
+
+export const fetchDriverStandings = async (year: number): Promise<DriverStanding[]> => {
+  const mk = await getMeetingKey(year, '');
+  return fetch(`${OPENF1_BASE}/standings/drivers?meeting_key=${mk}`).then(r => r.json());
+};
+
+export const fetchTeamStandings = async (year: number): Promise<TeamStanding[]> => {
+  const mk = await getMeetingKey(year, '');
+  return fetch(`${OPENF1_BASE}/standings/constructors?meeting_key=${mk}`).then(r => r.json());
+};

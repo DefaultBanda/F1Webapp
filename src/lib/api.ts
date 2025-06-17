@@ -149,3 +149,26 @@ export const fetchTeamStandings = async (year: number): Promise<TeamStanding[]> 
   const mk = await getMeetingKey(year, '');
   return fetch(`${OPENF1_BASE}/standings/constructors?meeting_key=${mk}`).then(r => r.json());
 };
+
+// --- Schedule Interface and Fetch ---
+export interface ScheduleEvent {
+  meetingKey: number;
+  name: string;
+  country: string;
+  date: string;
+}
+
+export const fetchSchedule = async (year: number): Promise<ScheduleEvent[]> => {
+  const raw = await fetch(`${OPENF1_BASE}/meetings?year=${year}`).then(r => r.json());
+  return raw.map((m: any) => ({
+    meetingKey: m.meeting_key,
+    name: m.name,
+    country: m.country || '',
+    date: m.date || ''
+  }));
+});
+
+export const fetchTeamStandings = async (year: number): Promise<TeamStanding[]> => { (year: number): Promise<TeamStanding[]> => {
+  const mk = await getMeetingKey(year, '');
+  return fetch(`${OPENF1_BASE}/standings/constructors?meeting_key=${mk}`).then(r => r.json());
+};

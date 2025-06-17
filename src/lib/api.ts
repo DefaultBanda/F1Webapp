@@ -2,10 +2,7 @@
 // No backend proxy; all calls go to https://api.openf1.org/v1
 
 // --- Data Structures (Exported) ---
-export interface LapTimeDataPoint {
-  LapNumber: number;
-  [driverCode: string]: number | null;
-}
+export interface LapTimeDataPoint { LapNumber: number; [driverCode: string]: number | null; }
 export interface SpeedDataPoint { Distance: number; Speed: number; }
 export interface GearMapDataPoint { X: number; Y: number; nGear: number; }
 export interface ThrottleDataPoint { Distance: number; Throttle: number; }
@@ -33,8 +30,7 @@ export interface LapPositionDataPoint { LapNumber: number; [driverCode: string]:
 // --- OpenF1 Base URL ---
 const OPENF1_BASE = 'https://api.openf1.org/v1';
 
-// --- Helper: Map year & event & session names to session_key ---
-// You may cache results if needed
+// --- Helpers: Resolve meeting & session keys ---
 async function getMeetingKey(year: number, event: string): Promise<number> {
   const res = await fetch(`${OPENF1_BASE}/meetings?year=${year}`);
   const list = await res.json();
@@ -42,6 +38,7 @@ async function getMeetingKey(year: number, event: string): Promise<number> {
   if (!m) throw new Error(`Meeting not found for ${year} ${event}`);
   return m.meeting_key;
 }
+
 async function getSessionKey(meetingKey: number, session: string): Promise<number> {
   const res = await fetch(`${OPENF1_BASE}/sessions?meeting_key=${meetingKey}`);
   const list = await res.json();
@@ -50,11 +47,10 @@ async function getSessionKey(meetingKey: number, session: string): Promise<numbe
   return s.session_key;
 }
 
-// --- API Fetch Functions (keep original signatures) ---
-
+// --- API Fetch Functions ---
 export const fetchAvailableSessions = async (year: number, event: string): Promise<AvailableSession[]> => {
-  const key = await getMeetingKey(year, event);
-  const raw = await fetch(`${OPENF1_BASE}/sessions?meeting_key=${key}`).then(r => r.json());
+  const mk = await getMeetingKey(year, event);
+  const raw = await fetch(`${OPENF1_BASE}/sessions?meeting_key=${mk}`).then(r => r.json());
   return raw.map((s: any) => ({ name: s.name, type: s.type, startTime: s.date || '' }));
 };
 
@@ -130,14 +126,12 @@ export const fetchLapPositions = async (year: number, event: string, session: st
 
 export const fetchRaceResults = async (year: number): Promise<RaceResult[]> => {
   const mk = await getMeetingKey(year, '');
-  const data = await fetch(`${OPENF1_BASE}/results/races?meeting_key=${mk}`).then(r => r.json());
-  return data;
+  return fetch(`${OPENF1_BASE}/results/races?meeting_key=${mk}`).then(r => r.json());
 };
 
 export const fetchSpecificRaceResults = async (year: number, event: string, session: string): Promise<DetailedRaceResult[]> => {
   const mk = await getMeetingKey(year, event);
-  const raw = await fetch(`${OPENF1_BASE}/results/race/${year}?meeting_key=${mk}`).then(r => r.json());
-  return raw; 
+  return fetch(`${OPENF1_BASE}/results/race/${year}?meeting_key=${mk}`).then(r => r.json());
 };
 
 export const fetchDriverStandings = async (year: number): Promise<DriverStanding[]> => {
@@ -160,15 +154,5 @@ export interface ScheduleEvent {
 
 export const fetchSchedule = async (year: number): Promise<ScheduleEvent[]> => {
   const raw = await fetch(`${OPENF1_BASE}/meetings?year=${year}`).then(r => r.json());
-  return raw.map((m: any) => ({
-    meetingKey: m.meeting_key,
-    name: m.name,
-    country: m.country || '',
-    date: m.date || ''
-  }));
-});
-
-export const fetchTeamStandings = async (year: number): Promise<TeamStanding[]> => { (year: number): Promise<TeamStanding[]> => {
-  const mk = await getMeetingKey(year, '');
-  return fetch(`${OPENF1_BASE}/standings/constructors?meeting_key=${mk}`).then(r => r.json());
+  return raw.map((m: any) => ({ meetingKey: m.meeting_key, name: m.name, country: m.country || '', date: m.date || '' }));
 };
